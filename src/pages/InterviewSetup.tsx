@@ -12,6 +12,9 @@ import {
   ChevronRight
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useInterview } from "@/hooks/useInterview";
+import { useInterviewSession } from "@/hooks/useInterviewSession";
+import { useToast } from "@/hooks/use-toast";
 
 const roles = [
   "Frontend Developer",
@@ -34,12 +37,16 @@ const techStacks = [
 
 const InterviewSetup = () => {
   const navigate = useNavigate();
+  const { setConfig, setSessionId, setStartTime } = useInterview();
+  const { createSession } = useInterviewSession();
+  const { toast } = useToast();
   const [step, setStep] = useState(1);
   const [role, setRole] = useState("");
   const [customRole, setCustomRole] = useState("");
   const [level, setLevel] = useState("");
   const [selectedTech, setSelectedTech] = useState<string[]>([]);
   const [questionCount, setQuestionCount] = useState(5);
+  const [isCreating, setIsCreating] = useState(false);
 
   const handleTechToggle = (tech: string) => {
     setSelectedTech(prev => 
@@ -49,16 +56,45 @@ const InterviewSetup = () => {
     );
   };
 
-  const handleStartInterview = () => {
-    // Store interview config (will use zustand/context later)
+  const handleStartInterview = async () => {
     const config = {
       role: role === "Other" ? customRole : role,
       level,
       techStack: selectedTech,
       questionCount
     };
-    console.log("Interview config:", config);
-    navigate("/interview/room");
+
+    setIsCreating(true);
+
+    try {
+      // Create session in database
+      const sessionId = await createSession(config);
+      
+      if (sessionId) {
+        setConfig(config);
+        setSessionId(sessionId);
+        setStartTime(new Date());
+        navigate("/interview/room");
+      } else {
+        // Still allow interview without saving
+        setConfig(config);
+        setStartTime(new Date());
+        toast({
+          title: "Continuing without saving",
+          description: "Your session won't be saved. Log in to save your progress.",
+        });
+        navigate("/interview/room");
+      }
+    } catch (error) {
+      console.error("Error starting interview:", error);
+      toast({
+        title: "Error",
+        description: "Failed to start interview. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreating(false);
+    }
   };
 
   const canProceed = () => {
@@ -293,9 +329,16 @@ const InterviewSetup = () => {
                 <Button 
                   variant="hero" 
                   onClick={handleStartInterview}
+                  disabled={isCreating}
                 >
-                  Start Interview
-                  <ArrowRight className="w-5 h-5" />
+                  {isCreating ? (
+                    <div className="w-5 h-5 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      Start Interview
+                      <ArrowRight className="w-5 h-5" />
+                    </>
+                  )}
                 </Button>
               )}
             </div>

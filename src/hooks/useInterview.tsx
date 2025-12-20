@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from "react";
+import { createContext, useContext, useState, ReactNode, useRef } from "react";
 
 export interface InterviewConfig {
   role: string;
@@ -30,6 +30,11 @@ interface InterviewContextType {
   transcript: TranscriptEntry[];
   addTranscriptEntry: (entry: Omit<TranscriptEntry, "timestamp">) => void;
   clearInterview: () => void;
+  sessionId: string | null;
+  setSessionId: (id: string | null) => void;
+  startTime: Date | null;
+  setStartTime: (time: Date | null) => void;
+  getDurationSeconds: () => number;
 }
 
 const InterviewContext = createContext<InterviewContextType | undefined>(undefined);
@@ -39,9 +44,16 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [startTime, setStartTime] = useState<Date | null>(null);
 
   const addTranscriptEntry = (entry: Omit<TranscriptEntry, "timestamp">) => {
     setTranscript((prev) => [...prev, { ...entry, timestamp: new Date() }]);
+  };
+
+  const getDurationSeconds = () => {
+    if (!startTime) return 0;
+    return Math.floor((new Date().getTime() - startTime.getTime()) / 1000);
   };
 
   const clearInterview = () => {
@@ -49,6 +61,8 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
     setQuestions([]);
     setCurrentQuestionIndex(0);
     setTranscript([]);
+    setSessionId(null);
+    setStartTime(null);
   };
 
   return (
@@ -63,6 +77,11 @@ export const InterviewProvider = ({ children }: { children: ReactNode }) => {
         transcript,
         addTranscriptEntry,
         clearInterview,
+        sessionId,
+        setSessionId,
+        startTime,
+        setStartTime,
+        getDurationSeconds,
       }}
     >
       {children}
