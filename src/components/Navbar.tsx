@@ -1,14 +1,21 @@
 import { Link, useLocation } from "react-router-dom";
 import { Button } from "./ui/button";
-import { Bot, Menu, X } from "lucide-react";
+import { Bot, Menu, X, LogOut } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 export const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const { user, signOut } = useAuth();
   
   const isAuthPage = location.pathname === "/login" || location.pathname === "/signup";
+
+  const handleSignOut = async () => {
+    await signOut();
+    setIsOpen(false);
+  };
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-xl border-b border-border/50">
@@ -27,22 +34,36 @@ export const Navbar = () => {
             <Link to="/" className="text-muted-foreground hover:text-foreground transition-colors">
               Home
             </Link>
-            <Link to="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
-              Dashboard
-            </Link>
+            {user && (
+              <Link to="/dashboard" className="text-muted-foreground hover:text-foreground transition-colors">
+                Dashboard
+              </Link>
+            )}
           </div>
 
           {/* Auth Buttons */}
-          {!isAuthPage && (
-            <div className="hidden md:flex items-center gap-3">
-              <Button variant="ghost" asChild>
-                <Link to="/login">Sign In</Link>
-              </Button>
-              <Button variant="hero" asChild>
-                <Link to="/signup">Get Started</Link>
-              </Button>
-            </div>
-          )}
+          <div className="hidden md:flex items-center gap-3">
+            {user ? (
+              <>
+                <span className="text-sm text-muted-foreground">
+                  {user.user_metadata?.name || user.email}
+                </span>
+                <Button variant="ghost" onClick={handleSignOut}>
+                  <LogOut className="w-4 h-4" />
+                  Sign Out
+                </Button>
+              </>
+            ) : !isAuthPage && (
+              <>
+                <Button variant="ghost" asChild>
+                  <Link to="/login">Sign In</Link>
+                </Button>
+                <Button variant="hero" asChild>
+                  <Link to="/signup">Get Started</Link>
+                </Button>
+              </>
+            )}
+          </div>
 
           {/* Mobile Menu Button */}
           <button
@@ -66,14 +87,26 @@ export const Navbar = () => {
             >
               Home
             </Link>
-            <Link 
-              to="/dashboard" 
-              className="text-muted-foreground hover:text-foreground transition-colors py-2"
-              onClick={() => setIsOpen(false)}
-            >
-              Dashboard
-            </Link>
-            {!isAuthPage && (
+            {user && (
+              <Link 
+                to="/dashboard" 
+                className="text-muted-foreground hover:text-foreground transition-colors py-2"
+                onClick={() => setIsOpen(false)}
+              >
+                Dashboard
+              </Link>
+            )}
+            {user ? (
+              <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+                <span className="text-sm text-muted-foreground py-2">
+                  {user.user_metadata?.name || user.email}
+                </span>
+                <Button variant="ghost" onClick={handleSignOut}>
+                  <LogOut className="w-4 h-4" />
+                  Sign Out
+                </Button>
+              </div>
+            ) : !isAuthPage && (
               <div className="flex flex-col gap-2 pt-2">
                 <Button variant="ghost" asChild>
                   <Link to="/login" onClick={() => setIsOpen(false)}>Sign In</Link>
