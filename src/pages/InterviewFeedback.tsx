@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/Navbar";
@@ -9,29 +10,89 @@ import {
   CheckCircle,
   AlertCircle,
   ArrowRight,
-  RotateCcw
+  RotateCcw,
+  Loader2
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useInterview } from "@/hooks/useInterview";
+import { useInterviewSession, InterviewFeedback as IFeedback } from "@/hooks/useInterviewSession";
 
 const InterviewFeedback = () => {
-  // Mock feedback data
-  const overallScore = 78;
+  const { clearInterview, sessionId: contextSessionId } = useInterview();
+  const { getSession, isAnalyzing } = useInterviewSession();
+  const [feedback, setFeedback] = useState<IFeedback | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadFeedback = async () => {
+      // First try session storage (from just-completed interview)
+      const storedFeedback = sessionStorage.getItem("interviewFeedback");
+      const storedSessionId = sessionStorage.getItem("interviewSessionId");
+      
+      if (storedFeedback) {
+        try {
+          setFeedback(JSON.parse(storedFeedback));
+          sessionStorage.removeItem("interviewFeedback");
+          sessionStorage.removeItem("interviewSessionId");
+        } catch (e) {
+          console.error("Error parsing stored feedback:", e);
+        }
+      } else if (contextSessionId || storedSessionId) {
+        // Load from database
+        const session = await getSession(contextSessionId || storedSessionId!);
+        if (session && session.overall_score !== null) {
+          setFeedback({
+            overallScore: session.overall_score,
+            technicalScore: session.technical_score || 0,
+            communicationScore: session.communication_score || 0,
+            problemSolvingScore: session.problem_solving_score || 0,
+            strengths: session.strengths,
+            improvements: session.improvements,
+            detailedFeedback: session.ai_feedback || "",
+          });
+        }
+      }
+      
+      setIsLoading(false);
+    };
+
+    loadFeedback();
+  }, [contextSessionId, getSession]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearInterview();
+    };
+  }, [clearInterview]);
+
+  if (isLoading || isAnalyzing) {
+    return (
+      <div className="min-h-screen bg-gradient-hero flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 text-primary animate-spin mx-auto mb-4" />
+          <h2 className="text-xl font-semibold text-foreground mb-2">Analyzing Your Interview</h2>
+          <p className="text-muted-foreground">Our AI is reviewing your responses...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback mock data if no real feedback
+  const displayFeedback = feedback || {
+    overallScore: 0,
+    technicalScore: 0,
+    communicationScore: 0,
+    problemSolvingScore: 0,
+    strengths: ["Complete an interview to see your strengths"],
+    improvements: ["Complete an interview to see areas for improvement"],
+    detailedFeedback: "",
+  };
+
   const metrics = [
-    { label: "Technical Knowledge", score: 85, icon: Target },
-    { label: "Communication", score: 72, icon: MessageSquare },
-    { label: "Problem Solving", score: 80, icon: TrendingUp },
-  ];
-
-  const strengths = [
-    "Clear explanation of React hooks and lifecycle",
-    "Good examples from previous experience",
-    "Confident tone throughout the interview"
-  ];
-
-  const improvements = [
-    "Could elaborate more on system design questions",
-    "Try to structure answers using STAR method",
-    "Take a breath before answering complex questions"
+    { label: "Technical Knowledge", score: displayFeedback.technicalScore, icon: Target },
+    { label: "Communication", score: displayFeedback.communicationScore, icon: MessageSquare },
+    { label: "Problem Solving", score: displayFeedback.problemSolvingScore, icon: TrendingUp },
   ];
 
   return (
@@ -46,7 +107,9 @@ const InterviewFeedback = () => {
               <Trophy className="w-10 h-10 text-primary-foreground" />
             </div>
             <h1 className="text-3xl md:text-4xl font-bold text-foreground mb-2">Interview Complete!</h1>
-            <p className="text-muted-foreground">Here's your detailed performance feedback</p>
+            <p className="text-muted-foreground">
+              {feedback ? "Here's your AI-powered performance analysis" : "Complete an interview to see your feedback"}
+            </p>
           </div>
 
           {/* Overall Score */}
@@ -54,7 +117,7 @@ const InterviewFeedback = () => {
             <div className="flex flex-col md:flex-row items-center justify-between gap-6">
               <div>
                 <h2 className="text-lg font-semibold text-foreground mb-1">Overall Performance</h2>
-                <p className="text-muted-foreground text-sm">Based on all interview metrics</p>
+                <p className="text-muted-foreground text-sm">Based on AI analysis of your responses</p>
               </div>
               <div className="relative w-32 h-32">
                 <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
@@ -74,7 +137,7 @@ const InterviewFeedback = () => {
                     strokeWidth="8"
                     fill="none"
                     strokeLinecap="round"
-                    strokeDasharray={`${overallScore * 2.83} 283`}
+                    strokeDasharray={`${displayFeedback.overallScore * 2.83} 283`}
                     className="transition-all duration-1000"
                   />
                   <defs>
@@ -85,7 +148,7 @@ const InterviewFeedback = () => {
                   </defs>
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-3xl font-bold text-foreground">{overallScore}%</span>
+                  <span className="text-3xl font-bold text-foreground">{displayFeedback.overallScore}%</span>
                 </div>
               </div>
             </div>
@@ -118,6 +181,14 @@ const InterviewFeedback = () => {
             ))}
           </div>
 
+          {/* Detailed Feedback */}
+          {displayFeedback.detailedFeedback && (
+            <div className="bg-gradient-card border border-border/50 rounded-xl p-6 shadow-card mb-8 opacity-0 animate-fade-in" style={{ animationDelay: "450ms" }}>
+              <h3 className="font-semibold text-foreground mb-4">Detailed Analysis</h3>
+              <p className="text-muted-foreground whitespace-pre-wrap">{displayFeedback.detailedFeedback}</p>
+            </div>
+          )}
+
           {/* Strengths & Improvements */}
           <div className="grid md:grid-cols-2 gap-6 mb-8">
             {/* Strengths */}
@@ -127,9 +198,9 @@ const InterviewFeedback = () => {
                 <h3 className="font-semibold text-foreground">Strengths</h3>
               </div>
               <ul className="space-y-3">
-                {strengths.map((item, index) => (
+                {displayFeedback.strengths.map((item, index) => (
                   <li key={index} className="flex items-start gap-2 text-sm">
-                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-2" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 mt-2 flex-shrink-0" />
                     <span className="text-muted-foreground">{item}</span>
                   </li>
                 ))}
@@ -143,9 +214,9 @@ const InterviewFeedback = () => {
                 <h3 className="font-semibold text-foreground">Areas to Improve</h3>
               </div>
               <ul className="space-y-3">
-                {improvements.map((item, index) => (
+                {displayFeedback.improvements.map((item, index) => (
                   <li key={index} className="flex items-start gap-2 text-sm">
-                    <div className="w-1.5 h-1.5 rounded-full bg-accent mt-2" />
+                    <div className="w-1.5 h-1.5 rounded-full bg-accent mt-2 flex-shrink-0" />
                     <span className="text-muted-foreground">{item}</span>
                   </li>
                 ))}

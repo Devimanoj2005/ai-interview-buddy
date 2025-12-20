@@ -14,6 +14,69 @@ export type Database = {
   }
   public: {
     Tables: {
+      interview_sessions: {
+        Row: {
+          ai_feedback: string | null
+          communication_score: number | null
+          completed_at: string | null
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          improvements: string[] | null
+          level: string
+          overall_score: number | null
+          problem_solving_score: number | null
+          question_count: number
+          role: string
+          status: string
+          strengths: string[] | null
+          tech_stack: string[]
+          technical_score: number | null
+          transcript: Json
+          user_id: string
+        }
+        Insert: {
+          ai_feedback?: string | null
+          communication_score?: number | null
+          completed_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          improvements?: string[] | null
+          level: string
+          overall_score?: number | null
+          problem_solving_score?: number | null
+          question_count?: number
+          role: string
+          status?: string
+          strengths?: string[] | null
+          tech_stack?: string[]
+          technical_score?: number | null
+          transcript?: Json
+          user_id: string
+        }
+        Update: {
+          ai_feedback?: string | null
+          communication_score?: number | null
+          completed_at?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          improvements?: string[] | null
+          level?: string
+          overall_score?: number | null
+          problem_solving_score?: number | null
+          question_count?: number
+          role?: string
+          status?: string
+          strengths?: string[] | null
+          tech_stack?: string[]
+          technical_score?: number | null
+          transcript?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string

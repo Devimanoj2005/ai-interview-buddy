@@ -6,7 +6,6 @@ import { VoiceWave } from "@/components/VoiceWave";
 import { Navbar } from "@/components/Navbar";
 import { 
   Mic, 
-  MicOff, 
   PhoneOff, 
   MessageSquare,
   Volume2,
@@ -15,8 +14,9 @@ import {
   AlertCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { useInterview, TranscriptEntry } from "@/hooks/useInterview";
+import { useInterview } from "@/hooks/useInterview";
 import { useVoiceInterview } from "@/hooks/useVoiceInterview";
+import { useInterviewSession } from "@/hooks/useInterviewSession";
 import { Input } from "@/components/ui/input";
 
 // You'll need to create an ElevenLabs agent and add the ID here
@@ -25,10 +25,19 @@ const ELEVENLABS_AGENT_ID = "";
 
 const InterviewRoom = () => {
   const navigate = useNavigate();
-  const { config, questions, currentQuestionIndex, transcript, addTranscriptEntry } = useInterview();
+  const { 
+    config, 
+    currentQuestionIndex, 
+    transcript, 
+    addTranscriptEntry, 
+    sessionId, 
+    getDurationSeconds 
+  } = useInterview();
+  const { analyzeAndComplete, updateTranscript } = useInterviewSession();
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [agentId, setAgentId] = useState(ELEVENLABS_AGENT_ID);
   const [showAgentInput, setShowAgentInput] = useState(!ELEVENLABS_AGENT_ID);
+  const [isEnding, setIsEnding] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -54,6 +63,16 @@ const InterviewRoom = () => {
     }
   }, [transcript]);
 
+  // Update transcript in database periodically
+  useEffect(() => {
+    if (sessionId && transcript.length > 0) {
+      const timer = setTimeout(() => {
+        updateTranscript(sessionId, transcript);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [transcript, sessionId, updateTranscript]);
+
   const handleStartInterview = async () => {
     if (!agentId.trim()) {
       setShowAgentInput(true);
@@ -63,7 +82,21 @@ const InterviewRoom = () => {
   };
 
   const handleEndInterview = async () => {
+    setIsEnding(true);
     await endConversation();
+
+    // Analyze the interview if we have a session and transcript
+    if (sessionId && config && transcript.length > 0) {
+      const duration = getDurationSeconds();
+      const feedback = await analyzeAndComplete(sessionId, transcript, config, duration);
+      
+      if (feedback) {
+        // Store feedback in session storage for the feedback page
+        sessionStorage.setItem("interviewFeedback", JSON.stringify(feedback));
+        sessionStorage.setItem("interviewSessionId", sessionId);
+      }
+    }
+
     navigate("/interview/feedback");
   };
 
@@ -244,18 +277,25 @@ const InterviewRoom = () => {
               variant="destructive"
               size="icon-lg"
               onClick={handleEndInterview}
+              disabled={isEnding}
               className="rounded-full"
             >
-              <PhoneOff className="w-6 h-6" />
+              {isEnding ? (
+                <div className="w-6 h-6 border-2 border-destructive-foreground border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <PhoneOff className="w-6 h-6" />
+              )}
             </Button>
           </div>
 
           <p className="text-center text-xs text-muted-foreground mt-3">
-            {!isConnected 
-              ? "Tap mic to start interview" 
-              : isSpeaking 
-                ? "AI is speaking..." 
-                : "Speak now - AI is listening"
+            {isEnding 
+              ? "Analyzing your interview..." 
+              : !isConnected 
+                ? "Tap mic to start interview" 
+                : isSpeaking 
+                  ? "AI is speaking..." 
+                  : "Speak now - AI is listening"
             }
           </p>
         </div>
