@@ -1,4 +1,4 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/Navbar";
 import { 
@@ -7,9 +7,11 @@ import {
   Clock, 
   TrendingUp,
   ChevronRight,
-  Briefcase
+  Briefcase,
+  LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/hooks/useAuth";
 
 // Mock session data
 const sessions = [
@@ -43,9 +45,16 @@ const sessions = [
 ];
 
 const Dashboard = () => {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
   const averageScore = Math.round(sessions.reduce((acc, s) => acc + s.score, 0) / sessions.length);
   const totalInterviews = sessions.length;
   const totalTime = sessions.reduce((acc, s) => acc + parseInt(s.duration), 0);
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/");
+  };
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -56,14 +65,22 @@ const Dashboard = () => {
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-8">
           <div className="opacity-0 animate-fade-in">
             <h1 className="text-3xl font-bold text-foreground mb-1">Dashboard</h1>
-            <p className="text-muted-foreground">Track your interview practice progress</p>
+            <p className="text-muted-foreground">
+              Welcome back{user?.user_metadata?.name ? `, ${user.user_metadata.name}` : ''}! Track your interview practice progress
+            </p>
           </div>
-          <Button variant="hero" asChild className="opacity-0 animate-fade-in" style={{ animationDelay: "100ms" }}>
-            <Link to="/interview/setup">
-              <Plus className="w-5 h-5" />
-              New Interview
-            </Link>
-          </Button>
+          <div className="flex items-center gap-3 opacity-0 animate-fade-in" style={{ animationDelay: "100ms" }}>
+            <Button variant="glass" onClick={handleSignOut}>
+              <LogOut className="w-4 h-4" />
+              Sign Out
+            </Button>
+            <Button variant="hero" asChild>
+              <Link to="/interview/setup">
+                <Plus className="w-5 h-5" />
+                New Interview
+              </Link>
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
