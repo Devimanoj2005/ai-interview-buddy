@@ -19,9 +19,8 @@ import { useVoiceInterview } from "@/hooks/useVoiceInterview";
 import { useInterviewSession } from "@/hooks/useInterviewSession";
 import { Input } from "@/components/ui/input";
 
-// You'll need to create an ElevenLabs agent and add the ID here
-// Create one at: https://elevenlabs.io/conversational-ai
-const ELEVENLABS_AGENT_ID = "";
+// Default ElevenLabs agent ID for interviews
+const ELEVENLABS_AGENT_ID = "agent_6101kcyahtpaekv93p8tdtdnkd2p";
 
 const InterviewRoom = () => {
   const navigate = useNavigate();
