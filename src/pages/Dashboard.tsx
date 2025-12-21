@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/Navbar";
@@ -10,8 +10,7 @@ import {
   ChevronRight,
   Briefcase,
   LogOut,
-  FileText,
-  X
+  FileText
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -19,6 +18,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 interface TranscriptEntry {
   speaker: string;
@@ -80,6 +80,21 @@ const Dashboard = () => {
     : 0;
   const totalInterviews = completedSessions.length;
   const totalTime = Math.round(sessions.reduce((acc, s) => acc + (s.duration_seconds || 0), 0) / 60);
+
+  // Chart data - last 10 completed sessions in chronological order
+  const chartData = useMemo(() => {
+    return completedSessions
+      .slice(0, 10)
+      .reverse()
+      .map((session, index) => ({
+        name: format(new Date(session.created_at), "MMM d"),
+        overall: session.overall_score || 0,
+        technical: session.technical_score || 0,
+        communication: session.communication_score || 0,
+        problemSolving: session.problem_solving_score || 0,
+        index: index + 1,
+      }));
+  }, [completedSessions]);
 
   const handleSignOut = async () => {
     await signOut();
@@ -161,8 +176,85 @@ const Dashboard = () => {
           </div>
         </div>
 
+        {/* Progress Chart */}
+        {chartData.length >= 2 && (
+          <div className="bg-gradient-card border border-border/50 rounded-2xl p-6 shadow-card mb-8 opacity-0 animate-fade-in" style={{ animationDelay: "300ms" }}>
+            <h2 className="text-xl font-semibold text-foreground mb-6 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary" />
+              Score Trends
+            </h2>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={chartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.3} />
+                  <XAxis 
+                    dataKey="name" 
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={12}
+                    tickLine={false}
+                  />
+                  <YAxis 
+                    domain={[0, 100]} 
+                    stroke="hsl(var(--muted-foreground))"
+                    fontSize={12}
+                    tickLine={false}
+                    tickFormatter={(value) => `${value}%`}
+                  />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'hsl(var(--card))', 
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '8px',
+                      color: 'hsl(var(--foreground))'
+                    }}
+                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    formatter={(value: number) => [`${value}%`, '']}
+                  />
+                  <Legend 
+                    wrapperStyle={{ paddingTop: '20px' }}
+                    formatter={(value) => <span style={{ color: 'hsl(var(--muted-foreground))' }}>{value}</span>}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="overall" 
+                    name="Overall"
+                    stroke="hsl(var(--primary))" 
+                    strokeWidth={2}
+                    dot={{ fill: 'hsl(var(--primary))', strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="technical" 
+                    name="Technical"
+                    stroke="#22c55e" 
+                    strokeWidth={2}
+                    dot={{ fill: '#22c55e', strokeWidth: 2, r: 4 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="communication" 
+                    name="Communication"
+                    stroke="#3b82f6" 
+                    strokeWidth={2}
+                    dot={{ fill: '#3b82f6', strokeWidth: 2, r: 4 }}
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="problemSolving" 
+                    name="Problem Solving"
+                    stroke="#f59e0b" 
+                    strokeWidth={2}
+                    dot={{ fill: '#f59e0b', strokeWidth: 2, r: 4 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
+
         {/* Session History */}
-        <div className="bg-gradient-card border border-border/50 rounded-2xl p-6 shadow-card opacity-0 animate-fade-in" style={{ animationDelay: "300ms" }}>
+        <div className="bg-gradient-card border border-border/50 rounded-2xl p-6 shadow-card opacity-0 animate-fade-in" style={{ animationDelay: "350ms" }}>
           <h2 className="text-xl font-semibold text-foreground mb-6">Session History</h2>
           
           {loading ? (
