@@ -151,6 +151,30 @@ export const useInterviewSession = () => {
 
       if (updateError) throw updateError;
 
+      // Send email notification
+      if (user?.email) {
+        try {
+          await supabase.functions.invoke("send-interview-complete-email", {
+            body: {
+              email: user.email,
+              name: user.user_metadata?.name || "",
+              role: config.role,
+              level: config.level,
+              overallScore: feedback.overallScore,
+              technicalScore: feedback.technicalScore,
+              communicationScore: feedback.communicationScore,
+              problemSolvingScore: feedback.problemSolvingScore,
+              strengths: feedback.strengths,
+              improvements: feedback.improvements,
+            },
+          });
+          console.log("Email notification sent successfully");
+        } catch (emailError) {
+          console.error("Failed to send email notification:", emailError);
+          // Don't throw - email is optional
+        }
+      }
+
       return feedback;
     } catch (error) {
       console.error("Error analyzing interview:", error);
