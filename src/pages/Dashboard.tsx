@@ -10,14 +10,20 @@ import {
   ChevronRight,
   Briefcase,
   LogOut,
-  FileText
+  FileText,
+  Trash2,
+  Archive,
+  MoreVertical
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 
 interface TranscriptEntry {
@@ -29,6 +35,7 @@ interface Session {
   id: string;
   role: string;
   level: string;
+  status: string;
   created_at: string;
   completed_at: string | null;
   duration_seconds: number | null;
@@ -49,6 +56,9 @@ const Dashboard = () => {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedSession, setSelectedSession] = useState<Session | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     const fetchSessions = async () => {
@@ -113,6 +123,55 @@ const Dashboard = () => {
     if (score >= 60) return "text-accent";
     return "text-destructive";
   };
+
+  const handleArchiveSession = async (session: Session, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const newStatus = session.status === "archived" ? "completed" : "archived";
+    
+    const { error } = await supabase
+      .from("interview_sessions")
+      .update({ status: newStatus })
+      .eq("id", session.id);
+
+    if (error) {
+      toast.error("Failed to update session");
+      return;
+    }
+
+    setSessions(prev => 
+      prev.map(s => s.id === session.id ? { ...s, status: newStatus } : s)
+    );
+    toast.success(newStatus === "archived" ? "Session archived" : "Session restored");
+  };
+
+  const handleDeleteSession = async () => {
+    if (!sessionToDelete) return;
+
+    const { error } = await supabase
+      .from("interview_sessions")
+      .delete()
+      .eq("id", sessionToDelete.id);
+
+    if (error) {
+      toast.error("Failed to delete session");
+      return;
+    }
+
+    setSessions(prev => prev.filter(s => s.id !== sessionToDelete.id));
+    setDeleteDialogOpen(false);
+    setSessionToDelete(null);
+    toast.success("Session deleted");
+  };
+
+  const openDeleteDialog = (session: Session, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSessionToDelete(session);
+    setDeleteDialogOpen(true);
+  };
+
+  const filteredSessions = showArchived 
+    ? sessions.filter(s => s.status === "archived")
+    : sessions.filter(s => s.status !== "archived");
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -255,23 +314,56 @@ const Dashboard = () => {
 
         {/* Session History */}
         <div className="bg-gradient-card border border-border/50 rounded-2xl p-6 shadow-card opacity-0 animate-fade-in" style={{ animationDelay: "350ms" }}>
-          <h2 className="text-xl font-semibold text-foreground mb-6">Session History</h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-semibold text-foreground">Session History</h2>
+            <div className="flex gap-2">
+              <Button 
+                variant={!showArchived ? "secondary" : "ghost"} 
+                size="sm"
+                onClick={() => setShowArchived(false)}
+              >
+                Active
+              </Button>
+              <Button 
+                variant={showArchived ? "secondary" : "ghost"} 
+                size="sm"
+                onClick={() => setShowArchived(true)}
+              >
+                <Archive className="w-4 h-4 mr-1" />
+                Archived
+              </Button>
+            </div>
+          </div>
           
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
             </div>
-          ) : sessions.length > 0 ? (
+          ) : filteredSessions.length > 0 ? (
             <div className="space-y-3">
-              {sessions.map((session) => (
+              {filteredSessions.map((session) => (
                 <div 
                   key={session.id}
                   onClick={() => setSelectedSession(session)}
-                  className="group flex items-center justify-between p-4 rounded-xl bg-secondary/30 border border-border/30 hover:border-primary/30 transition-all duration-300 cursor-pointer"
+                  className={cn(
+                    "group flex items-center justify-between p-4 rounded-xl border transition-all duration-300 cursor-pointer",
+                    session.status === "archived" 
+                      ? "bg-muted/30 border-border/20 opacity-70" 
+                      : "bg-secondary/30 border-border/30 hover:border-primary/30"
+                  )}
                 >
                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                      <Briefcase className="w-6 h-6 text-primary" />
+                    <div className={cn(
+                      "w-12 h-12 rounded-xl flex items-center justify-center",
+                      session.status === "archived" 
+                        ? "bg-muted/50 border border-border/30" 
+                        : "bg-primary/10 border border-primary/20"
+                    )}>
+                      {session.status === "archived" ? (
+                        <Archive className="w-6 h-6 text-muted-foreground" />
+                      ) : (
+                        <Briefcase className="w-6 h-6 text-primary" />
+                      )}
                     </div>
                     <div>
                       <h3 className="font-semibold text-foreground">{session.role}</h3>
@@ -291,7 +383,7 @@ const Dashboard = () => {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-4">
+                  <div className="flex items-center gap-3">
                     <div className="text-right">
                       {session.overall_score ? (
                         <>
@@ -304,21 +396,63 @@ const Dashboard = () => {
                         <span className="text-sm text-muted-foreground">In Progress</span>
                       )}
                     </div>
-                    <ChevronRight className="w-5 h-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                    
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                        <Button variant="ghost" size="icon" className="h-8 w-8">
+                          <MoreVertical className="w-4 h-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem onClick={(e) => handleArchiveSession(session, e as unknown as React.MouseEvent)}>
+                          <Archive className="w-4 h-4 mr-2" />
+                          {session.status === "archived" ? "Restore" : "Archive"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem 
+                          onClick={(e) => openDeleteDialog(session, e as unknown as React.MouseEvent)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
             <div className="text-center py-12">
-              <p className="text-muted-foreground mb-4">No interview sessions yet</p>
-              <Button variant="hero" asChild>
-                <Link to="/interview/setup">Start Your First Interview</Link>
-              </Button>
+              <p className="text-muted-foreground mb-4">
+                {showArchived ? "No archived sessions" : "No interview sessions yet"}
+              </p>
+              {!showArchived && (
+                <Button variant="hero" asChild>
+                  <Link to="/interview/setup">Start Your First Interview</Link>
+                </Button>
+              )}
             </div>
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Interview Session</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this interview session? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSession} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Session Detail Modal */}
       <Dialog open={!!selectedSession} onOpenChange={() => setSelectedSession(null)}>
