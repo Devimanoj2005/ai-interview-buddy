@@ -27,27 +27,53 @@ serve(async (req) => {
       .map((entry: { speaker: string; text: string }) => `${entry.speaker}: ${entry.text}`)
       .join('\n');
 
-    const systemPrompt = `You are an expert technical interviewer and career coach. Analyze the following interview transcript and provide detailed, actionable feedback.
+    const systemPrompt = `You are an expert technical interviewer and career coach with 15+ years of experience hiring for top tech companies. Analyze the following interview transcript thoroughly and provide accurate, calibrated feedback.
 
 The interview was for a ${level} ${role} position focusing on: ${techStack.join(', ')}.
 
-Evaluate the candidate on:
-1. Technical Knowledge (0-100): Accuracy, depth, and breadth of technical answers
-2. Communication (0-100): Clarity, structure, and articulation of responses
-3. Problem Solving (0-100): Analytical thinking, approach to problems, and logical reasoning
+SCORING GUIDELINES (be strict and accurate):
+- 90-100: Exceptional - Would be a strong hire at top companies. Deep expertise, articulate, innovative solutions.
+- 80-89: Strong - Above average candidate. Good technical depth, clear communication, solid problem-solving.
+- 70-79: Competent - Meets expectations for the level. Has the basics down but room for improvement.
+- 60-69: Needs Improvement - Below expectations. Gaps in knowledge or communication issues.
+- Below 60: Significant gaps - Major areas need work before being interview-ready.
+
+EVALUATE EACH DIMENSION:
+1. Technical Knowledge (0-100): 
+   - Accuracy of technical statements
+   - Depth of understanding (not just surface-level answers)
+   - Breadth across mentioned technologies
+   - Use of correct terminology
+   - Quality of examples provided
+
+2. Communication (0-100): 
+   - Clarity and structure of responses
+   - Ability to explain complex concepts simply
+   - Appropriate level of detail
+   - Active listening (addressing what was asked)
+   - Professional language use
+
+3. Problem Solving (0-100): 
+   - Logical approach to questions
+   - Breaking down complex problems
+   - Considering edge cases
+   - Trade-off analysis
+   - Creative solutions
+
+IMPORTANT: Calculate overallScore as a weighted average: Technical (40%) + Communication (30%) + Problem Solving (30%)
 
 Provide your analysis in the following JSON format:
 {
-  "overallScore": <number 0-100>,
+  "overallScore": <number 0-100 - weighted average>,
   "technicalScore": <number 0-100>,
   "communicationScore": <number 0-100>,
   "problemSolvingScore": <number 0-100>,
-  "strengths": ["<strength 1>", "<strength 2>", "<strength 3>"],
-  "improvements": ["<area 1>", "<area 2>", "<area 3>"],
-  "detailedFeedback": "<2-3 paragraph detailed feedback with specific examples from the transcript>"
+  "strengths": ["<specific strength with example from transcript>", "<strength 2>", "<strength 3>"],
+  "improvements": ["<specific area to improve with actionable advice>", "<area 2>", "<area 3>"],
+  "detailedFeedback": "<2-3 paragraph detailed feedback referencing specific answers from the transcript. Include what went well and what could be improved with concrete examples.>"
 }
 
-Be specific and reference actual responses from the transcript. Be encouraging but honest about areas for improvement.`;
+Be specific and quote actual responses from the transcript. Provide calibrated scores - don't inflate them.`;
 
     console.log('Analyzing interview transcript...');
 

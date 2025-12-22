@@ -11,23 +11,41 @@ import {
   AlertCircle,
   ArrowRight,
   RotateCcw,
-  Loader2
+  Loader2,
+  Download
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useInterview } from "@/hooks/useInterview";
 import { useInterviewSession, InterviewFeedback as IFeedback } from "@/hooks/useInterviewSession";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+import jsPDF from "jspdf";
+
+interface TranscriptEntry {
+  speaker: string;
+  text: string;
+}
+
+interface SessionDetails {
+  role: string;
+  level: string;
+  created_at: string;
+  transcript: TranscriptEntry[];
+}
 
 const InterviewFeedback = () => {
   const { clearInterview, sessionId: contextSessionId } = useInterview();
   const { getSession, isAnalyzing } = useInterviewSession();
   const [feedback, setFeedback] = useState<IFeedback | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionDetails, setSessionDetails] = useState<SessionDetails | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const loadFeedback = async () => {
-      // First try session storage (from just-completed interview)
       const storedFeedback = sessionStorage.getItem("interviewFeedback");
       const storedSessionId = sessionStorage.getItem("interviewSessionId");
+      const targetSessionId = contextSessionId || storedSessionId;
       
       if (storedFeedback) {
         try {
@@ -37,19 +55,29 @@ const InterviewFeedback = () => {
         } catch (e) {
           console.error("Error parsing stored feedback:", e);
         }
-      } else if (contextSessionId || storedSessionId) {
-        // Load from database
-        const session = await getSession(contextSessionId || storedSessionId!);
-        if (session && session.overall_score !== null) {
-          setFeedback({
-            overallScore: session.overall_score,
-            technicalScore: session.technical_score || 0,
-            communicationScore: session.communication_score || 0,
-            problemSolvingScore: session.problem_solving_score || 0,
-            strengths: session.strengths,
-            improvements: session.improvements,
-            detailedFeedback: session.ai_feedback || "",
+      }
+      
+      if (targetSessionId) {
+        const session = await getSession(targetSessionId);
+        if (session) {
+          setSessionDetails({
+            role: session.role,
+            level: session.level,
+            created_at: session.created_at,
+            transcript: Array.isArray(session.transcript) ? session.transcript as TranscriptEntry[] : [],
           });
+          
+          if (!storedFeedback && session.overall_score !== null) {
+            setFeedback({
+              overallScore: session.overall_score,
+              technicalScore: session.technical_score || 0,
+              communicationScore: session.communication_score || 0,
+              problemSolvingScore: session.problem_solving_score || 0,
+              strengths: session.strengths,
+              improvements: session.improvements,
+              detailedFeedback: session.ai_feedback || "",
+            });
+          }
         }
       }
       
@@ -59,12 +87,176 @@ const InterviewFeedback = () => {
     loadFeedback();
   }, [contextSessionId, getSession]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       clearInterview();
     };
   }, [clearInterview]);
+
+  const exportToPDF = () => {
+    if (!feedback) return;
+    
+    setIsExporting(true);
+    
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      const contentWidth = pageWidth - margin * 2;
+      let yPos = 20;
+
+      // Title
+      doc.setFontSize(24);
+      doc.setFont("helvetica", "bold");
+      doc.text("Interview Performance Report", margin, yPos);
+      yPos += 15;
+
+      // Session info
+      if (sessionDetails) {
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(100);
+        doc.text(`${sessionDetails.level} ${sessionDetails.role}`, margin, yPos);
+        yPos += 6;
+        doc.text(`Date: ${new Date(sessionDetails.created_at).toLocaleDateString()}`, margin, yPos);
+        yPos += 15;
+      }
+
+      // Overall Score
+      doc.setTextColor(0);
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("Overall Score", margin, yPos);
+      yPos += 8;
+      doc.setFontSize(32);
+      doc.text(`${feedback.overallScore}%`, margin, yPos);
+      yPos += 15;
+
+      // Score breakdown
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Score Breakdown", margin, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      const scores = [
+        { label: "Technical Knowledge", score: feedback.technicalScore },
+        { label: "Communication", score: feedback.communicationScore },
+        { label: "Problem Solving", score: feedback.problemSolvingScore },
+      ];
+      
+      scores.forEach(({ label, score }) => {
+        doc.text(`${label}: ${score}%`, margin, yPos);
+        yPos += 6;
+      });
+      yPos += 10;
+
+      // Strengths
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Strengths", margin, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      feedback.strengths.forEach((strength) => {
+        const lines = doc.splitTextToSize(`• ${strength}`, contentWidth);
+        doc.text(lines, margin, yPos);
+        yPos += lines.length * 5 + 2;
+      });
+      yPos += 8;
+
+      // Areas to improve
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Areas to Improve", margin, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      feedback.improvements.forEach((improvement) => {
+        const lines = doc.splitTextToSize(`• ${improvement}`, contentWidth);
+        doc.text(lines, margin, yPos);
+        yPos += lines.length * 5 + 2;
+      });
+      yPos += 8;
+
+      // Detailed feedback
+      if (feedback.detailedFeedback) {
+        if (yPos > 220) {
+          doc.addPage();
+          yPos = 20;
+        }
+        
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Detailed Analysis", margin, yPos);
+        yPos += 8;
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        const feedbackLines = doc.splitTextToSize(feedback.detailedFeedback, contentWidth);
+        feedbackLines.forEach((line: string) => {
+          if (yPos > 280) {
+            doc.addPage();
+            yPos = 20;
+          }
+          doc.text(line, margin, yPos);
+          yPos += 5;
+        });
+      }
+
+      // Transcript
+      if (sessionDetails?.transcript && sessionDetails.transcript.length > 0) {
+        doc.addPage();
+        yPos = 20;
+        
+        doc.setFontSize(16);
+        doc.setFont("helvetica", "bold");
+        doc.text("Interview Transcript", margin, yPos);
+        yPos += 12;
+        
+        doc.setFontSize(10);
+        sessionDetails.transcript.forEach((entry) => {
+          if (yPos > 270) {
+            doc.addPage();
+            yPos = 20;
+          }
+          
+          doc.setFont("helvetica", "bold");
+          const speaker = entry.speaker === "AI" ? "Interviewer" : "You";
+          doc.text(`${speaker}:`, margin, yPos);
+          yPos += 5;
+          
+          doc.setFont("helvetica", "normal");
+          const textLines = doc.splitTextToSize(entry.text, contentWidth);
+          textLines.forEach((line: string) => {
+            if (yPos > 280) {
+              doc.addPage();
+              yPos = 20;
+            }
+            doc.text(line, margin, yPos);
+            yPos += 5;
+          });
+          yPos += 4;
+        });
+      }
+
+      // Save
+      const fileName = sessionDetails 
+        ? `interview-${sessionDetails.role.replace(/\s+/g, '-').toLowerCase()}-${new Date(sessionDetails.created_at).toISOString().split('T')[0]}.pdf`
+        : `interview-report-${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      doc.save(fileName);
+      toast.success("PDF exported successfully");
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      toast.error("Failed to export PDF");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   if (isLoading || isAnalyzing) {
     return (
@@ -232,6 +424,21 @@ const InterviewFeedback = () => {
                 Practice Again
               </Link>
             </Button>
+            {feedback && (
+              <Button 
+                variant="glass" 
+                size="lg" 
+                onClick={exportToPDF}
+                disabled={isExporting}
+              >
+                {isExporting ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Download className="w-5 h-5" />
+                )}
+                Export PDF
+              </Button>
+            )}
             <Button variant="glass" size="lg" asChild>
               <Link to="/dashboard">
                 View All Sessions
