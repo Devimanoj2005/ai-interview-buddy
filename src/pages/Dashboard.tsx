@@ -13,8 +13,11 @@ import {
   FileText,
   Trash2,
   Archive,
-  MoreVertical
+  MoreVertical,
+  Download,
+  Loader2
 } from "lucide-react";
+import jsPDF from "jspdf";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
@@ -59,6 +62,7 @@ const Dashboard = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [sessionToDelete, setSessionToDelete] = useState<Session | null>(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const fetchSessions = async () => {
@@ -172,6 +176,169 @@ const Dashboard = () => {
   const filteredSessions = showArchived 
     ? sessions.filter(s => s.status === "archived")
     : sessions.filter(s => s.status !== "archived");
+
+  const exportSessionToPDF = (session: Session) => {
+    setIsExporting(true);
+    
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const margin = 20;
+      const contentWidth = pageWidth - margin * 2;
+      let yPos = 20;
+
+      // Title
+      doc.setFontSize(24);
+      doc.setFont("helvetica", "bold");
+      doc.text("Interview Performance Report", margin, yPos);
+      yPos += 15;
+
+      // Session info
+      doc.setFontSize(12);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(100);
+      doc.text(`${session.level} ${session.role}`, margin, yPos);
+      yPos += 6;
+      doc.text(`Date: ${format(new Date(session.created_at), "MMMM d, yyyy")}`, margin, yPos);
+      yPos += 15;
+
+      // Overall Score
+      doc.setTextColor(0);
+      doc.setFontSize(16);
+      doc.setFont("helvetica", "bold");
+      doc.text("Overall Score", margin, yPos);
+      yPos += 8;
+      doc.setFontSize(32);
+      doc.text(`${session.overall_score || 0}%`, margin, yPos);
+      yPos += 15;
+
+      // Score breakdown
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "bold");
+      doc.text("Score Breakdown", margin, yPos);
+      yPos += 8;
+      
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      const scores = [
+        { label: "Technical Knowledge", score: session.technical_score || 0 },
+        { label: "Communication", score: session.communication_score || 0 },
+        { label: "Problem Solving", score: session.problem_solving_score || 0 },
+      ];
+      
+      scores.forEach(({ label, score }) => {
+        doc.text(`${label}: ${score}%`, margin, yPos);
+        yPos += 6;
+      });
+      yPos += 10;
+
+      // Strengths
+      if (session.strengths && session.strengths.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Strengths", margin, yPos);
+        yPos += 8;
+        
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+        session.strengths.forEach((strength) => {
+          const lines = doc.splitTextToSize(`• ${strength}`, contentWidth);
+          doc.text(lines, margin, yPos);
+          yPos += lines.length * 5 + 2;
+        });
+        yPos += 8;
+      }
+
+      // Areas to improve
+      if (session.improvements && session.improvements.length > 0) {
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Areas to Improve", margin, yPos);
+        yPos += 8;
+        
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "normal");
+        session.improvements.forEach((improvement) => {
+          const lines = doc.splitTextToSize(`• ${improvement}`, contentWidth);
+          doc.text(lines, margin, yPos);
+          yPos += lines.length * 5 + 2;
+        });
+        yPos += 8;
+      }
+
+      // Detailed feedback
+      if (session.ai_feedback) {
+        if (yPos > 220) {
+          doc.addPage();
+          yPos = 20;
+        }
+        
+        doc.setFontSize(14);
+        doc.setFont("helvetica", "bold");
+        doc.text("Detailed Analysis", margin, yPos);
+        yPos += 8;
+        
+        doc.setFontSize(10);
+        doc.setFont("helvetica", "normal");
+        const feedbackLines = doc.splitTextToSize(session.ai_feedback, contentWidth);
+        feedbackLines.forEach((line: string) => {
+          if (yPos > 280) {
+            doc.addPage();
+            yPos = 20;
+          }
+          doc.text(line, margin, yPos);
+          yPos += 5;
+        });
+      }
+
+      // Transcript
+      const transcript = session.transcript as TranscriptEntry[];
+      if (transcript && Array.isArray(transcript) && transcript.length > 0) {
+        doc.addPage();
+        yPos = 20;
+        
+        doc.setFontSize(16);
+        doc.setFont("helvetica", "bold");
+        doc.text("Interview Transcript", margin, yPos);
+        yPos += 12;
+        
+        doc.setFontSize(10);
+        transcript.forEach((entry) => {
+          if (yPos > 270) {
+            doc.addPage();
+            yPos = 20;
+          }
+          
+          doc.setFont("helvetica", "bold");
+          const speaker = entry.speaker === "AI" ? "Interviewer" : "You";
+          doc.text(`${speaker}:`, margin, yPos);
+          yPos += 5;
+          
+          doc.setFont("helvetica", "normal");
+          const textLines = doc.splitTextToSize(entry.text, contentWidth);
+          textLines.forEach((line: string) => {
+            if (yPos > 280) {
+              doc.addPage();
+              yPos = 20;
+            }
+            doc.text(line, margin, yPos);
+            yPos += 5;
+          });
+          yPos += 4;
+        });
+      }
+
+      // Save
+      const fileName = `interview-${session.role.replace(/\s+/g, '-').toLowerCase()}-${format(new Date(session.created_at), "yyyy-MM-dd")}.pdf`;
+      doc.save(fileName);
+      toast.success("PDF exported successfully");
+    } catch (error) {
+      console.error("Error exporting PDF:", error);
+      toast.error("Failed to export PDF");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-hero">
@@ -558,16 +725,33 @@ const Dashboard = () => {
                   </div>
                 )}
 
-                {/* Session Info */}
-                <div className="flex items-center gap-4 text-sm text-muted-foreground border-t border-border/50 pt-4">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="w-4 h-4" />
-                    {format(new Date(selectedSession.created_at), "MMMM d, yyyy 'at' h:mm a")}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="w-4 h-4" />
-                    {formatDuration(selectedSession.duration_seconds)}
-                  </span>
+                {/* Session Info & Export */}
+                <div className="flex items-center justify-between border-t border-border/50 pt-4">
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span className="flex items-center gap-1">
+                      <Calendar className="w-4 h-4" />
+                      {format(new Date(selectedSession.created_at), "MMMM d, yyyy 'at' h:mm a")}
+                    </span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-4 h-4" />
+                      {formatDuration(selectedSession.duration_seconds)}
+                    </span>
+                  </div>
+                  {selectedSession.overall_score && (
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      onClick={() => exportSessionToPDF(selectedSession)}
+                      disabled={isExporting}
+                    >
+                      {isExporting ? (
+                        <Loader2 className="w-4 h-4 animate-spin mr-1" />
+                      ) : (
+                        <Download className="w-4 h-4 mr-1" />
+                      )}
+                      Export PDF
+                    </Button>
+                  )}
                 </div>
               </div>
             </ScrollArea>
