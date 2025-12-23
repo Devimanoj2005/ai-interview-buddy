@@ -1,5 +1,5 @@
 import { useConversation } from "@elevenlabs/react";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
@@ -13,130 +13,131 @@ export const useVoiceInterview = (options: UseVoiceInterviewOptions = {}) => {
   const { toast } = useToast();
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const userEndedRef = useRef(false);
 
   const conversation = useConversation({
     onConnect: () => {
       console.log("Connected to ElevenLabs agent");
+      userEndedRef.current = false;
       setIsConnecting(false);
       setError(null);
     },
-    onDisconnect: () => {
-      console.log("Disconnected from ElevenLabs agent");
+    onDisconnect: (details) => {
+      console.log("Disconnected from ElevenLabs agent", details);
+      setIsConnecting(false);
       options.onSpeakingChange?.(false);
       options.onListeningChange?.(false);
-    },
-    onMessage: (message: unknown) => {
-      console.log("Received message:", JSON.stringify(message, null, 2));
-      
-      // Handle different message types from ElevenLabs
-      const msg = message as Record<string, unknown>;
-      const messageType = msg.type as string;
-      
-      // User transcript - finalized speech-to-text
-      if (messageType === "user_transcript") {
-        // Try multiple possible property paths for user transcript
-        const userTranscript = 
-          (msg.user_transcription_event as Record<string, unknown>)?.user_transcript ||
-          (msg.user_transcript_event as Record<string, unknown>)?.user_transcript ||
-          msg.user_transcript ||
-          msg.text;
-        
-        if (userTranscript && typeof userTranscript === "string" && userTranscript.trim()) {
-          console.log("User said:", userTranscript);
-          options.onTranscript?.("User", userTranscript.trim());
-        }
-      } 
-      // Agent response - AI's spoken text
-      else if (messageType === "agent_response") {
-        const agentResponse = 
-          (msg.agent_response_event as Record<string, unknown>)?.agent_response ||
-          msg.agent_response ||
-          msg.text;
-        
-        if (agentResponse && typeof agentResponse === "string" && agentResponse.trim()) {
-          console.log("Agent said:", agentResponse);
-          options.onTranscript?.("AI", agentResponse.trim());
-        }
-      }
-      // Handle transcript type directly (some ElevenLabs versions)
-      else if (messageType === "transcript" && msg.text) {
-        const text = msg.text as string;
-        const role = msg.role as string;
-        if (text.trim()) {
-          console.log(`Transcript [${role}]:`, text);
-          options.onTranscript?.(role === "agent" ? "AI" : "User", text.trim());
-        }
-      }
-      // Handle audio_transcript for live transcription
-      else if (messageType === "audio" && msg.audio_event) {
-        const audioEvent = msg.audio_event as Record<string, unknown>;
-        if (audioEvent.transcript) {
-          const transcript = audioEvent.transcript as string;
-          console.log("Audio transcript:", transcript);
-        }
+
+      // If we didn't intentionally end it, surface a helpful error.
+      if (!userEndedRef.current) {
+        const message =
+          details?.reason === "error"
+            ? details.message
+            : "The interview disconnected unexpectedly. Please try again.";
+
+        setError(message);
+        toast({
+          variant: "destructive",
+          title: "Interview disconnected",
+          description: message,
+        });
       }
     },
-    onError: (err: unknown) => {
-      console.error("ElevenLabs error:", err);
-      const errorMessage = typeof err === "string" ? err : "Connection error";
-      setError(errorMessage);
+    onModeChange: ({ mode }) => {
+      options.onSpeakingChange?.(mode === "speaking");
+      options.onListeningChange?.(mode === "listening");
+    },
+    onStatusChange: ({ status }) => {
+      console.log("ElevenLabs status:", status);
+    },
+    onMessage: (payload: unknown) => {
+      // In @elevenlabs/react v0.12.x, onMessage is a simplified payload:
+      // { message: string, role: 'user' | 'agent', source: 'user' | 'ai' }
+      console.log("ElevenLabs message:", payload);
+
+      const msg = payload as any;
+      const text = (msg?.message ?? msg?.text) as unknown;
+      const role = (msg?.role ?? msg?.source) as unknown;
+
+      if (typeof text === "string" && text.trim()) {
+        const speaker: "AI" | "User" = role === "agent" || role === "ai" ? "AI" : "User";
+        options.onTranscript?.(speaker, text.trim());
+      }
+    },
+    onError: (message: string) => {
+      console.error("ElevenLabs error:", message);
+      setError(message || "Connection error");
       setIsConnecting(false);
       toast({
         variant: "destructive",
         title: "Voice Connection Error",
-        description: errorMessage,
+        description: message || "Connection error",
       });
+    },
+    onDebug: (info) => {
+      console.log("ElevenLabs debug:", info);
     },
   });
 
-  // Track speaking/listening states
   const isSpeaking = conversation.isSpeaking;
 
-  const startConversation = useCallback(async (agentId: string, interviewConfig?: any) => {
-    setIsConnecting(true);
-    setError(null);
+  const startConversation = useCallback(
+    async (agentId: string, interviewConfig?: any) => {
+      setIsConnecting(true);
+      setError(null);
+      userEndedRef.current = false;
 
-    try {
-      // Request microphone permission
-      await navigator.mediaDevices.getUserMedia({ audio: true });
+      try {
+        // Request microphone permission
+        await navigator.mediaDevices.getUserMedia({ audio: true });
 
-      // Get signed URL from edge function
-      const { data, error: fnError } = await supabase.functions.invoke(
-        "elevenlabs-conversation-token",
-        {
-          body: { agentId, interviewConfig },
+        // Get WebRTC token (preferred) or signed URL (fallback)
+        const { data, error: fnError } = await supabase.functions.invoke(
+          "elevenlabs-conversation-token",
+          {
+            body: { agentId, interviewConfig },
+          }
+        );
+
+        if (fnError) {
+          throw new Error(fnError.message || "Failed to get conversation credentials");
         }
-      );
 
-      if (fnError) {
-        throw new Error(fnError.message || "Failed to get conversation token");
+        if (data?.token) {
+          await conversation.startSession({
+            conversationToken: data.token,
+            connectionType: "webrtc",
+          });
+          return;
+        }
+
+        if (data?.signed_url) {
+          await conversation.startSession({
+            signedUrl: data.signed_url,
+            connectionType: "websocket",
+          });
+          return;
+        }
+
+        throw new Error("No conversation token or signed URL received");
+      } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : "Failed to start conversation";
+        console.error("Failed to start conversation:", err);
+        setError(errorMessage);
+        setIsConnecting(false);
+
+        toast({
+          variant: "destructive",
+          title: "Connection Failed",
+          description: errorMessage,
+        });
       }
-
-      if (!data?.signed_url) {
-        throw new Error("No signed URL received");
-      }
-
-      // Start the conversation with WebSocket (signed URL requires connectionType: "websocket")
-      await conversation.startSession({
-        signedUrl: data.signed_url,
-        connectionType: "websocket",
-      });
-
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "Failed to start conversation";
-      console.error("Failed to start conversation:", err);
-      setError(errorMessage);
-      setIsConnecting(false);
-      
-      toast({
-        variant: "destructive",
-        title: "Connection Failed",
-        description: errorMessage,
-      });
-    }
-  }, [conversation, toast]);
+    },
+    [conversation, toast]
+  );
 
   const endConversation = useCallback(async () => {
+    userEndedRef.current = true;
     await conversation.endSession();
     options.onSpeakingChange?.(false);
     options.onListeningChange?.(false);

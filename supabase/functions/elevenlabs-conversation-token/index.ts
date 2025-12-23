@@ -25,31 +25,65 @@ serve(async (req) => {
       throw new Error("Agent ID is required");
     }
 
-    console.log("Requesting conversation token for agent:", agentId);
+    console.log("Requesting conversation credentials for agent:", agentId);
     console.log("Interview config:", interviewConfig);
 
-    // Get a conversation token from ElevenLabs
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`,
-      {
-        method: "GET",
-        headers: {
-          "xi-api-key": ELEVENLABS_API_KEY,
-        },
-      }
-    );
+    let token: string | null = null;
+    let signedUrl: string | null = null;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("ElevenLabs API error:", response.status, errorText);
-      throw new Error(`ElevenLabs API error: ${response.status}`);
+    // Prefer WebRTC token (recommended by ElevenLabs)
+    try {
+      const tokenRes = await fetch(
+        `https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=${agentId}`,
+        {
+          method: "GET",
+          headers: {
+            "xi-api-key": ELEVENLABS_API_KEY,
+          },
+        }
+      );
+
+      if (tokenRes.ok) {
+        const tokenData = await tokenRes.json();
+        token = tokenData?.token ?? null;
+        console.log("Got WebRTC token successfully");
+      } else {
+        const errorText = await tokenRes.text();
+        console.warn("Token endpoint failed:", tokenRes.status, errorText);
+      }
+    } catch (e) {
+      console.warn("Token endpoint threw:", e);
     }
 
-    const data = await response.json();
-    console.log("Got signed URL successfully");
+    // Fallback to signed URL (WebSocket)
+    if (!token) {
+      const signedRes = await fetch(
+        `https://api.elevenlabs.io/v1/convai/conversation/get_signed_url?agent_id=${agentId}`,
+        {
+          method: "GET",
+          headers: {
+            "xi-api-key": ELEVENLABS_API_KEY,
+          },
+        }
+      );
+
+      if (!signedRes.ok) {
+        const errorText = await signedRes.text();
+        console.error("ElevenLabs API error:", signedRes.status, errorText);
+        throw new Error(`ElevenLabs API error: ${signedRes.status}`);
+      }
+
+      const signedData = await signedRes.json();
+      signedUrl = signedData?.signed_url ?? null;
+      console.log("Got signed URL successfully");
+    }
+
+    if (!token && !signedUrl) {
+      throw new Error("Failed to obtain conversation token or signed URL");
+    }
 
     return new Response(
-      JSON.stringify({ signed_url: data.signed_url }),
+      JSON.stringify({ token, signed_url: signedUrl }),
       {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       }
