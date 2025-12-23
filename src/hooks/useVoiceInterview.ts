@@ -116,9 +116,10 @@ export const useVoiceInterview = (options: UseVoiceInterviewOptions = {}) => {
         throw new Error("No signed URL received");
       }
 
-      // Start the conversation with WebSocket
+      // Start the conversation with WebSocket (signed URL requires connectionType: "websocket")
       await conversation.startSession({
         signedUrl: data.signed_url,
+        connectionType: "websocket",
       });
 
     } catch (err) {
