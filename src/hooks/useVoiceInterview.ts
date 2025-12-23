@@ -26,21 +26,53 @@ export const useVoiceInterview = (options: UseVoiceInterviewOptions = {}) => {
       options.onListeningChange?.(false);
     },
     onMessage: (message: unknown) => {
-      console.log("Received message:", message);
+      console.log("Received message:", JSON.stringify(message, null, 2));
       
-      // Handle different message types
+      // Handle different message types from ElevenLabs
       const msg = message as Record<string, unknown>;
-      if (msg.type === "user_transcript") {
-        const event = msg.user_transcription_event as Record<string, unknown> | undefined;
-        const userMessage = event?.user_transcript as string | undefined;
-        if (userMessage) {
-          options.onTranscript?.("User", userMessage);
+      const messageType = msg.type as string;
+      
+      // User transcript - finalized speech-to-text
+      if (messageType === "user_transcript") {
+        // Try multiple possible property paths for user transcript
+        const userTranscript = 
+          (msg.user_transcription_event as Record<string, unknown>)?.user_transcript ||
+          (msg.user_transcript_event as Record<string, unknown>)?.user_transcript ||
+          msg.user_transcript ||
+          msg.text;
+        
+        if (userTranscript && typeof userTranscript === "string" && userTranscript.trim()) {
+          console.log("User said:", userTranscript);
+          options.onTranscript?.("User", userTranscript.trim());
         }
-      } else if (msg.type === "agent_response") {
-        const event = msg.agent_response_event as Record<string, unknown> | undefined;
-        const agentMessage = event?.agent_response as string | undefined;
-        if (agentMessage) {
-          options.onTranscript?.("AI", agentMessage);
+      } 
+      // Agent response - AI's spoken text
+      else if (messageType === "agent_response") {
+        const agentResponse = 
+          (msg.agent_response_event as Record<string, unknown>)?.agent_response ||
+          msg.agent_response ||
+          msg.text;
+        
+        if (agentResponse && typeof agentResponse === "string" && agentResponse.trim()) {
+          console.log("Agent said:", agentResponse);
+          options.onTranscript?.("AI", agentResponse.trim());
+        }
+      }
+      // Handle transcript type directly (some ElevenLabs versions)
+      else if (messageType === "transcript" && msg.text) {
+        const text = msg.text as string;
+        const role = msg.role as string;
+        if (text.trim()) {
+          console.log(`Transcript [${role}]:`, text);
+          options.onTranscript?.(role === "agent" ? "AI" : "User", text.trim());
+        }
+      }
+      // Handle audio_transcript for live transcription
+      else if (messageType === "audio" && msg.audio_event) {
+        const audioEvent = msg.audio_event as Record<string, unknown>;
+        if (audioEvent.transcript) {
+          const transcript = audioEvent.transcript as string;
+          console.log("Audio transcript:", transcript);
         }
       }
     },
