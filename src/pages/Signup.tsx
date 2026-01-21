@@ -1,29 +1,73 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Navbar } from "@/components/Navbar";
-import { Bot, Mail, Lock, ArrowRight, User } from "lucide-react";
+import { Bot, Mail, Lock, ArrowRight, User, Eye, EyeOff, Check, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 
+// Strong password requirements
+const passwordRequirements = [
+  { id: "length", label: "At least 8 characters", test: (p: string) => p.length >= 8 },
+  { id: "uppercase", label: "One uppercase letter", test: (p: string) => /[A-Z]/.test(p) },
+  { id: "lowercase", label: "One lowercase letter", test: (p: string) => /[a-z]/.test(p) },
+  { id: "number", label: "One number", test: (p: string) => /\d/.test(p) },
+  { id: "special", label: "One special character (!@#$%^&*)", test: (p: string) => /[!@#$%^&*(),.?":{}|<>]/.test(p) },
+];
+
 const signupSchema = z.object({
-  name: z.string().min(2, "Name must be at least 2 characters").max(100, "Name is too long"),
-  email: z.string().email("Please enter a valid email address").max(255, "Email is too long"),
-  password: z.string().min(8, "Password must be at least 8 characters").max(72, "Password is too long"),
+  name: z.string()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name is too long")
+    .regex(/^[a-zA-Z\s'-]+$/, "Name can only contain letters, spaces, hyphens, and apostrophes"),
+  email: z.string()
+    .email("Please enter a valid email address")
+    .max(255, "Email is too long")
+    .refine((email) => {
+      // Block disposable email domains
+      const disposableDomains = ['tempmail.com', 'throwaway.com', 'guerrillamail.com', 'mailinator.com'];
+      const domain = email.split('@')[1]?.toLowerCase();
+      return !disposableDomains.includes(domain);
+    }, "Please use a valid email address"),
+  password: z.string()
+    .min(8, "Password must be at least 8 characters")
+    .max(72, "Password is too long")
+    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+    .regex(/\d/, "Password must contain at least one number")
+    .regex(/[!@#$%^&*(),.?":{}|<>]/, "Password must contain at least one special character"),
+  confirmPassword: z.string(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
 });
 
 const Signup = () => {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string }>({});
+  const [errors, setErrors] = useState<{ name?: string; email?: string; password?: string; confirmPassword?: string }>({});
   const { signUp, user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // Calculate password strength
+  const passwordStrength = useMemo(() => {
+    const passed = passwordRequirements.filter(req => req.test(password)).length;
+    return {
+      score: passed,
+      percentage: (passed / passwordRequirements.length) * 100,
+      label: passed === 0 ? "" : passed <= 2 ? "Weak" : passed <= 4 ? "Medium" : "Strong",
+      color: passed <= 2 ? "bg-destructive" : passed <= 4 ? "bg-yellow-500" : "bg-green-500",
+    };
+  }, [password]);
 
   useEffect(() => {
     if (user) {
@@ -36,13 +80,14 @@ const Signup = () => {
     setErrors({});
 
     // Validate inputs
-    const result = signupSchema.safeParse({ name, email, password });
+    const result = signupSchema.safeParse({ name, email, password, confirmPassword });
     if (!result.success) {
-      const fieldErrors: { name?: string; email?: string; password?: string } = {};
+      const fieldErrors: { name?: string; email?: string; password?: string; confirmPassword?: string } = {};
       result.error.errors.forEach((err) => {
-        if (err.path[0] === "name") fieldErrors.name = err.message;
-        if (err.path[0] === "email") fieldErrors.email = err.message;
-        if (err.path[0] === "password") fieldErrors.password = err.message;
+        const field = err.path[0] as keyof typeof fieldErrors;
+        if (!fieldErrors[field]) {
+          fieldErrors[field] = err.message;
+        }
       });
       setErrors(fieldErrors);
       return;
@@ -92,6 +137,7 @@ const Signup = () => {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     className="pl-10 h-12 bg-secondary/50 border-border/50 focus:border-primary"
+                    autoComplete="name"
                   />
                 </div>
                 {errors.name && <p className="text-destructive text-sm">{errors.name}</p>}
@@ -108,6 +154,7 @@ const Signup = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     className="pl-10 h-12 bg-secondary/50 border-border/50 focus:border-primary"
+                    autoComplete="email"
                   />
                 </div>
                 {errors.email && <p className="text-destructive text-sm">{errors.email}</p>}
@@ -119,14 +166,90 @@ const Signup = () => {
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <Input
                     id="password"
-                    type="password"
-                    placeholder="Min. 8 characters"
+                    type={showPassword ? "text" : "password"}
+                    placeholder="Create a strong password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="pl-10 h-12 bg-secondary/50 border-border/50 focus:border-primary"
+                    className="pl-10 pr-10 h-12 bg-secondary/50 border-border/50 focus:border-primary"
+                    autoComplete="new-password"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
                 </div>
+                
+                {/* Password strength indicator */}
+                {password && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full transition-all duration-300 ${passwordStrength.color}`}
+                          style={{ width: `${passwordStrength.percentage}%` }}
+                        />
+                      </div>
+                      <span className={`text-xs font-medium ${
+                        passwordStrength.score <= 2 ? "text-destructive" : 
+                        passwordStrength.score <= 4 ? "text-yellow-500" : "text-green-500"
+                      }`}>
+                        {passwordStrength.label}
+                      </span>
+                    </div>
+                    
+                    {/* Password requirements checklist */}
+                    <div className="grid grid-cols-1 gap-1 text-xs">
+                      {passwordRequirements.map((req) => {
+                        const passed = req.test(password);
+                        return (
+                          <div key={req.id} className="flex items-center gap-1.5">
+                            {passed ? (
+                              <Check className="w-3.5 h-3.5 text-green-500" />
+                            ) : (
+                              <X className="w-3.5 h-3.5 text-muted-foreground" />
+                            )}
+                            <span className={passed ? "text-green-500" : "text-muted-foreground"}>
+                              {req.label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {errors.password && <p className="text-destructive text-sm">{errors.password}</p>}
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirmPassword" className="text-foreground">Confirm Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                  <Input
+                    id="confirmPassword"
+                    type={showConfirmPassword ? "text" : "password"}
+                    placeholder="Confirm your password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="pl-10 pr-10 h-12 bg-secondary/50 border-border/50 focus:border-primary"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                  >
+                    {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                  </button>
+                </div>
+                {confirmPassword && password !== confirmPassword && (
+                  <p className="text-destructive text-sm">Passwords do not match</p>
+                )}
+                {errors.confirmPassword && <p className="text-destructive text-sm">{errors.confirmPassword}</p>}
               </div>
 
               <Button 
@@ -134,7 +257,7 @@ const Signup = () => {
                 variant="hero" 
                 size="lg" 
                 className="w-full"
-                disabled={isLoading}
+                disabled={isLoading || passwordStrength.score < 5}
               >
                 {isLoading ? "Creating account..." : "Create Account"}
                 {!isLoading && <ArrowRight className="w-5 h-5" />}
