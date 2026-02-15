@@ -4,39 +4,40 @@ import { Button } from "@/components/ui/button";
 import { AIAvatar } from "@/components/AIAvatar";
 import { VoiceWave } from "@/components/VoiceWave";
 import { Navbar } from "@/components/Navbar";
-import { 
-  Mic, 
-  PhoneOff, 
+import {
+  Mic,
+  PhoneOff,
   MessageSquare,
-  Volume2,
-  VolumeX,
   Clock,
-  AlertCircle
+  AlertCircle,
+  HelpCircle
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useInterview } from "@/hooks/useInterview";
 import { useVoiceInterview } from "@/hooks/useVoiceInterview";
 import { useInterviewSession } from "@/hooks/useInterviewSession";
 import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
 
 // Default ElevenLabs agent ID for interviews
 const ELEVENLABS_AGENT_ID = "agent_6101kcyahtpaekv93p8tdtdnkd2p";
 
 const InterviewRoom = () => {
   const navigate = useNavigate();
-  const { 
-    config, 
-    currentQuestionIndex, 
-    transcript, 
-    addTranscriptEntry, 
-    sessionId, 
-    getDurationSeconds 
+  const {
+    config,
+    currentQuestionIndex,
+    transcript,
+    addTranscriptEntry,
+    sessionId,
+    getDurationSeconds
   } = useInterview();
   const { analyzeAndComplete, updateTranscript } = useInterviewSession();
-  const [isSpeakerOn, setIsSpeakerOn] = useState(true);
+  const { toast } = useToast();
   const [agentId, setAgentId] = useState(ELEVENLABS_AGENT_ID);
   const [showAgentInput, setShowAgentInput] = useState(!ELEVENLABS_AGENT_ID);
   const [isEnding, setIsEnding] = useState(false);
+  const [showAudioHelp, setShowAudioHelp] = useState(false);
   const transcriptRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -77,7 +78,27 @@ const InterviewRoom = () => {
       setShowAgentInput(true);
       return;
     }
-    await startConversation(agentId, config);
+
+    try {
+      // Check audio permissions first
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop());
+
+      toast({
+        title: "Starting interview",
+        description: "Connecting to AI interviewer...",
+      });
+
+      await startConversation(agentId, config);
+    } catch (err) {
+      console.error("Audio permission error:", err);
+      toast({
+        variant: "destructive",
+        title: "Microphone Access Required",
+        description: "Please allow microphone access to start the voice interview.",
+      });
+      setShowAudioHelp(true);
+    }
   };
 
   const handleEndInterview = async () => {
@@ -172,8 +193,39 @@ const InterviewRoom = () => {
             )}
 
             {error && (
-              <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                {error}
+              <div className="mt-4 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm max-w-md">
+                <p className="font-semibold mb-1">Connection Error</p>
+                <p>{error}</p>
+                <button
+                  onClick={() => setShowAudioHelp(true)}
+                  className="text-primary hover:underline text-xs mt-2"
+                >
+                  Need help with audio?
+                </button>
+              </div>
+            )}
+
+            {showAudioHelp && (
+              <div className="mt-4 p-4 rounded-lg bg-accent/10 border border-accent/20 max-w-md">
+                <div className="flex items-start gap-2">
+                  <HelpCircle className="w-5 h-5 text-accent flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-semibold text-foreground mb-2">Audio Troubleshooting</h4>
+                    <ul className="text-sm text-muted-foreground space-y-2">
+                      <li>1. Check your browser permissions for microphone access</li>
+                      <li>2. Make sure your speakers/headphones are connected and volume is up</li>
+                      <li>3. Try using headphones to prevent echo</li>
+                      <li>4. Use Chrome, Edge, or Safari for best compatibility</li>
+                      <li>5. Check that no other app is using your microphone</li>
+                    </ul>
+                    <button
+                      onClick={() => setShowAudioHelp(false)}
+                      className="text-primary hover:underline text-xs mt-3"
+                    >
+                      Close help
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -257,26 +309,12 @@ const InterviewRoom = () => {
               </Button>
             )}
 
-            {/* Speaker Button */}
-            <Button
-              variant="glass"
-              size="icon-lg"
-              onClick={() => setIsSpeakerOn(!isSpeakerOn)}
-              className="rounded-full"
-            >
-              {isSpeakerOn ? (
-                <Volume2 className="w-6 h-6" />
-              ) : (
-                <VolumeX className="w-6 h-6" />
-              )}
-            </Button>
-
             {/* End Call Button */}
             <Button
               variant="destructive"
               size="icon-lg"
               onClick={handleEndInterview}
-              disabled={isEnding}
+              disabled={isEnding || !isConnected}
               className="rounded-full"
             >
               {isEnding ? (
@@ -285,18 +323,36 @@ const InterviewRoom = () => {
                 <PhoneOff className="w-6 h-6" />
               )}
             </Button>
+
+            {/* Audio Help Button */}
+            {!isConnected && !isConnecting && (
+              <Button
+                variant="glass"
+                size="icon-lg"
+                onClick={() => setShowAudioHelp(!showAudioHelp)}
+                className="rounded-full"
+              >
+                <HelpCircle className="w-6 h-6" />
+              </Button>
+            )}
           </div>
 
           <p className="text-center text-xs text-muted-foreground mt-3">
-            {isEnding 
-              ? "Analyzing your interview..." 
-              : !isConnected 
-                ? "Tap mic to start interview" 
-                : isSpeaking 
-                  ? "AI is speaking..." 
-                  : "Speak now - AI is listening"
+            {isEnding
+              ? "Analyzing your interview..."
+              : !isConnected
+                ? "Click mic to start - Make sure your audio is working"
+                : isSpeaking
+                  ? "AI is speaking - Listen carefully"
+                  : "AI is listening - Speak your answer"
             }
           </p>
+
+          {isConnected && (
+            <p className="text-center text-xs text-accent mt-1">
+              Audio working? If you can't hear the AI, check your speakers/headphones
+            </p>
+          )}
         </div>
       </div>
     </div>
